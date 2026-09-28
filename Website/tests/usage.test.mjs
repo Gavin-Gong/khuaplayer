@@ -125,4 +125,20 @@ test("real D1 deduplication, rolling windows, retention, and update failure isol
   assert.equal(await db.prepare("SELECT installations FROM update_daily_totals WHERE day='2026-09-01'").first("installations"),1);
   assert.equal(await db.prepare("SELECT installations FROM update_daily_totals WHERE day='2026-09-30'").first("installations"),2);
   assert.equal(await db.prepare("SELECT COUNT(*) AS n FROM update_daily_totals WHERE day='2026-10-01'").first("n"),0);
+
+  const reportSQL = (await readFile(new URL("../scripts/usage-report.sql", import.meta.url), "utf8"))
+    .replace(/--[^\n]*/g, "").replaceAll("date('now'", "date('2026-10-01'");
+  const reports = [];
+  for (const statement of reportSQL.split(";").filter(part => part.trim())) {
+    reports.push((await db.prepare(statement).all()).results);
+  }
+  assert.deepEqual(reports[0].map(row => row.installations), [1, 2, 2]);
+  assert.deepEqual(reports[1], [
+    {day: "2026-09-30", installations: 2},
+    {day: "2026-09-02", installations: 1},
+    {day: "2026-09-01", installations: 1},
+  ]);
+  assert.deepEqual(reports[2].sort((a, b) => a.version.localeCompare(b.version)), [
+    {version: "0.6.1", installations: 1}, {version: "0.6.2", installations: 1},
+  ]);
 });
