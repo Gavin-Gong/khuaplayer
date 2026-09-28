@@ -27,6 +27,19 @@ enum SPSoftwareUpdater {
 
     private static var controller: NSObject?
     private static var loadInFlight = false
+    private static let updateDelegate = SPUpdateUsageDelegate {
+        usageReportingConfigured
+    }
+
+    /// Distribution metadata, not a user setting. Unconfigured, third-party,
+    /// and App Store builds do not participate in the official feed statistics.
+    nonisolated static var usageReportingConfigured: Bool {
+        guard isConfigured,
+              Bundle.main.object(forInfoDictionaryKey: "SPUpdateUsageEnabled") as? Bool == true,
+              let value = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
+        else { return false }
+        return SPUpdateUsageDelegate.supports(feedURL: URL(string: value))
+    }
 
     private static var frameworkBundle: Bundle? {
         guard let fwDir = Bundle.main.privateFrameworksPath else { return nil }
@@ -91,7 +104,7 @@ enum SPSoftwareUpdater {
         typealias InitFn = @convention(c)
             (NSObject, Selector, ObjCBool, AnyObject?, AnyObject?) -> NSObject
         let initFn = unsafeBitCast(imp, to: InitFn.self)
-        controller = initFn(allocated, sel, true, nil, nil)
+        controller = initFn(allocated, sel, true, updateDelegate, nil)
         if spDebugEnabled {
             NSLog("[Updater] Sparkle update scheduling started")
         }

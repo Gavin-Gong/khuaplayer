@@ -91,7 +91,7 @@ if { [ -n "$SPARKLE_FEED_URL" ] && [ -z "$SPARKLE_PUBLIC_ED_KEY" ]; } ||
   echo "error: KHUA_SPARKLE_FEED_URL and KHUA_SPARKLE_PUBLIC_ED_KEY must be supplied together" >&2
   exit 2
 fi
-for update_key in SUFeedURL SUPublicEDKey SUEnableAutomaticChecks \
+for update_key in SUFeedURL SUPublicEDKey SUEnableAutomaticChecks SPUpdateUsageEnabled \
                   SUEnableSystemProfiling \
                   SUVerifyUpdateBeforeExtraction SURequireSignedFeed; do
   /usr/bin/plutil -remove "$update_key" "$MAIN_INFO" >/dev/null 2>&1 || true
@@ -103,6 +103,16 @@ if [ -n "$SPARKLE_FEED_URL" ]; then
   /usr/bin/plutil -insert SUEnableSystemProfiling -bool NO "$MAIN_INFO"
   /usr/bin/plutil -insert SUVerifyUpdateBeforeExtraction -bool YES "$MAIN_INFO"
   /usr/bin/plutil -insert SURequireSignedFeed -bool YES "$MAIN_INFO"
+fi
+
+# Only the official direct-download channel counts existing update checks.
+# Other distributors and Store builds retain the neutral privacy manifest.
+cp "$ROOT/Apps/Mac/Resources/PrivacyInfo.xcprivacy" \
+   "$CLEAN_APP/Contents/Resources/PrivacyInfo.xcprivacy"
+if [ "$SPARKLE_FEED_URL" = "https://khua.app/updates/appcast.xml" ]; then
+  /usr/bin/plutil -insert SPUpdateUsageEnabled -bool YES "$MAIN_INFO"
+  cp "$ROOT/Distribution/PrivacyInfo-Direct.xcprivacy" \
+     "$CLEAN_APP/Contents/Resources/PrivacyInfo.xcprivacy"
 fi
 
 # Assemble loose dylibs from empty so stale libraries cannot survive a

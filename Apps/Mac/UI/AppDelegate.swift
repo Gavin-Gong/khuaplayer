@@ -352,6 +352,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         alert.alertStyle = .informational
         alert.messageText = L("privacy.summary.title")
         alert.informativeText = L("privacy.summary.message")
+#if !SP_APP_STORE
+        if SPSoftwareUpdater.usageReportingConfigured {
+            alert.informativeText = L("privacy.updateUsage.message")
+        }
+#endif
         alert.addButton(withTitle: L("privacy.summary.ok"))
         if let window = sheetHostWindow {
             alert.beginSheetModal(for: window)

@@ -13,8 +13,11 @@
   content-addressed downloads; it cannot promote the production channel.
 
 The website's original Sites packaging remains intact. Cloudflare uses the
-separate `cloudflare/index.ts` entry point. No database or persistent server is
-needed. The Worker uses an R2 binding; no account token is shipped to browsers.
+separate `cloudflare/index.ts` entry point. Downloads and signed feeds use R2;
+limited update-check installation statistics use an isolated D1 binding.
+There is no persistent server, and no account token is shipped to browsers.
+See [update-check statistics](UPDATE_USAGE.md) for migrations, retention, and
+private aggregate reports. This does not enable website or download analytics.
 
 ## Website deployment
 
@@ -27,9 +30,12 @@ npm run build
 npm run check:worker
 npm run test:sites
 npm run test:releases
+npm run test:usage
+npx wrangler d1 migrations apply USAGE_DB --env staging --remote
 npx wrangler deploy --env staging --dry-run
 npx wrangler deploy --env staging
 # Inspect the staging site, downloads, JSON, signed feed, and language toggle.
+npx wrangler d1 migrations apply USAGE_DB --env production --remote
 npx wrangler deploy --env production
 ```
 

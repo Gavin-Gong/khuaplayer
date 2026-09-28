@@ -100,6 +100,15 @@ checks from the App menu. Generate and protect the EdDSA key using the locked
 Sparkle tools in `ThirdParty/sparkle-min/bin`, and keep the private key outside
 the repository.
 
+Starting with 0.6.1 (11), official direct-download builds attach a random local
+installation identifier to existing Sparkle appcast requests for deduplicated
+update-check statistics. There is no new setting, prompt, SDK, or request.
+`SPUpdateUsageEnabled` is distribution metadata injected by `bundle_libs.sh`
+only for the canonical official feed, not a user preference. The same step
+selects `Distribution/PrivacyInfo-Direct.xcprivacy` before signing; unconfigured,
+third-party-feed, and Store builds retain the neutral manifest. See
+[privacy](PRIVACY.md) and [statistics operations](Website/UPDATE_USAGE.md).
+
 See [Cloudflare publishing](Website/DEPLOYMENT.md) for website deployment,
 immutable R2 downloads, release history, signed appcasts, and the final channel
 promotion. The publication tools derive version/build/OS metadata from the

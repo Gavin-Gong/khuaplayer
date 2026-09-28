@@ -4,6 +4,19 @@ All notable public releases will be documented here.
 
 ## Unreleased
 
+## 0.6.1
+
+- Reused existing update checks for installation-level activity and version
+  statistics, deduplicated using a random local identifier.
+- Kept automatic update checks enabled by default, without additional
+  requests, settings, permission dialogs, or playback analytics.
+- Updated privacy disclosures and the in-app summary in all 17 languages.
+
+## 0.6.0
+
+- Enabled in-app update checks for the official direct-download channel.
+- Verified signed update feeds and packages before installation.
+
 ## 0.5.1
 
 - Show the full product name, Khua Player, in About while keeping Khua as the

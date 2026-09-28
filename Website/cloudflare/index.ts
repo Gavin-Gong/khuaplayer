@@ -1,4 +1,5 @@
 import { CATALOG_KEY, parseCatalog } from "./catalog.ts";
+import { parseUpdateUsage, pruneUpdateUsage, recordUpdateUsage } from "./usage.ts";
 
 const headers = {
   "Cache-Control": "no-store, no-transform",
@@ -6,7 +7,7 @@ const headers = {
 };
 
 export default {
-  async fetch(request, env): Promise<Response> {
+  async fetch(request, env, ctx): Promise<Response> {
     const path = new URL(request.url).pathname;
     const dynamic = path === "/download" || path.startsWith("/api/") || path.startsWith("/updates/");
     if (!dynamic) return env.ASSETS.fetch(request);
@@ -35,12 +36,29 @@ export default {
       // regenerate XML at the edge: changing even whitespace invalidates its signature.
       const feed = await env.RELEASES.get(catalog.appcastKey);
       if (!feed) throw new Error("Published feed is missing");
+      const usage = parseUpdateUsage(request);
+      if (usage && env.USAGE_DB) {
+        ctx.waitUntil(recordUpdateUsage(usage, env).catch(() => {
+          // Never log URLs, tokens, headers, or database error details.
+          console.error(JSON.stringify({ event: "update_usage_write_failed" }));
+        }));
+      }
       return new Response(head ? null : feed.body, {
         headers: { ...headers, "Content-Type": "application/rss+xml; charset=utf-8", ETag: feed.httpEtag },
       });
     } catch (cause) {
       console.error(JSON.stringify({ event: "release_read_failed", path, message: cause instanceof Error ? cause.message : "Unknown error" }));
       return error("Release information is temporarily unavailable. Please try again later.", 503);
+    }
+  },
+  async scheduled(event, env): Promise<void> {
+    if (!env.USAGE_DB) return;
+    try {
+      await pruneUpdateUsage(env.USAGE_DB, new Date(event.scheduledTime));
+      console.log(JSON.stringify({ event: "update_usage_retention_complete" }));
+    } catch {
+      console.error(JSON.stringify({ event: "update_usage_retention_failed" }));
+      throw new Error("Update usage retention failed");
     }
   },
 } satisfies ExportedHandler<Env>;

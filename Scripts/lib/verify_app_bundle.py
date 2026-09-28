@@ -188,6 +188,38 @@ def verify_captions_framework(app: Path, main_bundle_id: str) -> Path:
     return ensure_inside_app(binary, app, "KhuaPlayerCaptionsUI.framework")
 
 
+def verify_update_usage_privacy(app: Path, info: dict) -> None:
+    privacy_path = app / "Contents/Resources/PrivacyInfo.xcprivacy"
+    try:
+        with privacy_path.open("rb") as handle:
+            privacy = plistlib.load(handle)
+    except (OSError, plistlib.InvalidFileException) as exc:
+        raise BundleError("main app privacy manifest is missing or invalid") from exc
+    if privacy.get("NSPrivacyTracking") is not False:
+        raise BundleError("privacy manifest must not declare advertising tracking")
+    if info.get("SPUpdateUsageEnabled") is not True:
+        if privacy.get("NSPrivacyCollectedDataTypes") != []:
+            raise BundleError("inactive update statistics require the neutral privacy manifest")
+        return
+    if (info.get("SUFeedURL") != "https://khua.app/updates/appcast.xml"
+            or not info.get("SUPublicEDKey")
+            or info.get("SUEnableSystemProfiling") is not False):
+        raise BundleError("update statistics require the official feed with system profiling off")
+    declarations = privacy.get("NSPrivacyCollectedDataTypes", [])
+    expected = {"NSPrivacyCollectedDataTypeDeviceID",
+                "NSPrivacyCollectedDataTypeProductInteraction",
+                "NSPrivacyCollectedDataTypeOtherDataTypes"}
+    if not isinstance(declarations, list) or any(not isinstance(item, dict) for item in declarations):
+        raise BundleError("invalid update statistics privacy declarations")
+    if {item.get("NSPrivacyCollectedDataType") for item in declarations} != expected:
+        raise BundleError("update statistics privacy declarations are incomplete")
+    for item in declarations:
+        if (item.get("NSPrivacyCollectedDataTypeLinked") is not True
+                or item.get("NSPrivacyCollectedDataTypeTracking") is not False
+                or item.get("NSPrivacyCollectedDataTypePurposes") != ["NSPrivacyCollectedDataTypePurposeAnalytics"]):
+            raise BundleError("incorrect update statistics privacy purpose or linkage")
+
+
 def verify_bundle(
     app: Path,
     lock_path: Path,
@@ -225,6 +257,7 @@ def verify_bundle(
         raise BundleError(f"main executable missing: {main}")
     if str(info.get("LSMinimumSystemVersion", "")) != maximum_minos:
         raise BundleError("Info.plist minimum system version does not match dependency lock")
+    verify_update_usage_privacy(app, info)
 
     captions_binary = verify_captions_framework(app, str(info.get("CFBundleIdentifier", "")))
 

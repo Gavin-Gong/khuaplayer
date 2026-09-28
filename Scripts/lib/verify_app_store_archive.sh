@@ -222,6 +222,9 @@ verify_runtime_boundary() {
     SUEnableSystemProfiling
     SUVerifyUpdateBeforeExtraction
     SURequireSignedFeed
+    SPUpdateUsageEnabled
+    SPUpdateUsageInstallationV1
+    khua_usage
   )
   local grep_args=()
 
@@ -229,7 +232,7 @@ verify_runtime_boundary() {
     die "App Store archive must not contain Sparkle.framework"
   for update_key in SUFeedURL SUPublicEDKey SUEnableAutomaticChecks \
                     SUEnableSystemProfiling \
-                    SUVerifyUpdateBeforeExtraction SURequireSignedFeed; do
+                    SUVerifyUpdateBeforeExtraction SURequireSignedFeed SPUpdateUsageEnabled; do
     if /usr/libexec/PlistBuddy -c "Print :$update_key" \
          "$app/Contents/Info.plist" >/dev/null 2>&1; then
       die "App Store Info.plist must not contain $update_key"
@@ -286,7 +289,7 @@ APPEX_PRIVACY="$APPEX/Contents/Resources/PrivacyInfo.xcprivacy"
 [ ! -e "$SPARKLE" ] || die "App Store archive must not contain Sparkle: $SPARKLE"
 for update_key in SUFeedURL SUPublicEDKey SUEnableAutomaticChecks \
                   SUEnableSystemProfiling \
-                  SUVerifyUpdateBeforeExtraction SURequireSignedFeed; do
+                  SUVerifyUpdateBeforeExtraction SURequireSignedFeed SPUpdateUsageEnabled; do
   if /usr/libexec/PlistBuddy -c "Print :$update_key" "$MAIN_INFO" \
        >/dev/null 2>&1; then
     die "App Store Info.plist must not contain $update_key"

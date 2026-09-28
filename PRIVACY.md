@@ -2,11 +2,13 @@
 
 Effective date: September 28, 2026
 
-Khua does not use analytics, advertising SDKs, accounts, or telemetry,
-and it does not transmit playback files, playback history, or language
-preferences. Its runtime media stack is built without network protocol support.
-Optional runtime network activity includes system-managed language-model
-downloads and the channel-specific update check described below.
+Khua does not use advertising SDKs or accounts and does not collect playback
+analytics. It does not transmit playback files, playback history, subtitles,
+or language preferences to Khua. Its runtime media stack is built without
+network protocol support. Runtime network activity includes system-managed
+language-model downloads and the channel-specific update checks described below.
+Starting with version 0.6.1, the official direct-download build also measures
+update-check activity through those existing requests.
 
 Media files are opened only after an explicit user action, such as selecting a
 file, dropping a file onto the app, or opening it from Finder. Playback resume
@@ -46,6 +48,41 @@ are served from `downloads.khua.app`. Cloudflare provides website, feed, and
 download hosting and may process ordinary request metadata to deliver and
 protect these services. The website does not add analytics or advertising
 scripts. Its language choice is stored in the browser's local storage.
+
+## Update-check statistics
+
+Starting with version 0.6.1, an existing update check to the official feed also
+sends a randomly generated installation identifier. It is stored in this app's
+local preferences, not derived from hardware, an account, an advertising ID,
+or media files, and is not stored in Keychain or synchronized through iCloud.
+The updater already sends the app version in its User-Agent header. Together,
+these fields let us count an installation once per UTC date and understand
+version adoption. There is no analytics SDK, extra heartbeat, additional
+request, or increase in update-check frequency.
+
+This is pseudonymous installation-level statistics, not fully anonymous data:
+the random identifier can link update checks across days. The statistics
+database stores only a SHA-256 hash of that identifier, a UTC date, and the app
+version. It does not store raw identifiers, IP addresses, full User-Agent
+strings, exact request times, hardware identifiers, media details, or playback
+events. We do not use this data for advertising or combine it with other
+services' user profiles. An installation is not necessarily one person;
+resetting preferences or restoring a backup can affect the counts.
+
+Installation-level records are kept for a rolling window of 30 UTC dates and
+pruned by a daily job. Aggregate daily counts without installation identifiers
+may be retained longer. Cloudflare's operational processing and disaster-recovery
+backups have separate provider-managed retention; deleting records from the
+live database does not instantly remove every backup. Worker application logs
+omit identifiers, and query strings are redacted in Worker observability.
+
+There is no separate statistics setting or permission dialog. Automatic update
+checks remain enabled by default and can be disabled using the existing App
+menu setting. With automatic checks off, a manual **Check for Updates** still
+contacts the feed and sends the same statistics fields. No update check means
+no statistics request. Other distributors' feeds and Mac App Store builds do
+not participate in this official-channel mechanism. Statistics failures do not
+prevent the app from checking for or downloading updates.
 
 If a future version adds purchases, network playback, crash reporting, or any
 other data processing, this policy and the relevant store privacy disclosure

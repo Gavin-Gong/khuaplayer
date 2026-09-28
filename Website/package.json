@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "test:sites": "node --test tests/sites-worker.test.mjs",
     "test:releases": "node --experimental-strip-types --test tests/releases.test.mjs",
+    "test:usage": "node --experimental-strip-types --test tests/usage.test.mjs",
+    "usage:report": "wrangler d1 execute USAGE_DB --env production --remote --file scripts/usage-report.sql",
     "check:worker": "wrangler types && tsc -p tsconfig.worker.json",
     "dev:cloudflare": "wrangler dev",
     "deploy:staging": "npm run build && wrangler deploy --env staging",
@@ -27,6 +29,8 @@
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260928.1",
     "@types/node": "26.6.3",
+    "esbuild": "0.25.12",
+    "miniflare": "5.20260926.0-alpha",
     "typescript": "7.0.2",
     "wrangler": "4.142.0"
   }

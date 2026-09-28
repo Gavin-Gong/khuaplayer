@@ -179,9 +179,9 @@ export const content = {
     },
     privacy: {
       eyebrow: "Private by default",
-      title: "Plays your files.\nNot your *data.*",
+      title: "Your media stays\non your *Mac.*",
       description:
-        "No account, no analytics, no ads. Your videos and your watch history stay on your Mac, and subtitles are generated and translated right there too. The privacy policy takes a minute to read, because there is so little to say.",
+        "No account, no ads, no playback tracking. Your videos and watch history stay on your Mac, and subtitles are generated and translated right there too. Existing update checks include limited installation statistics—no extra requests or playback data. The privacy policy explains exactly what is sent.",
       action: "Read the privacy policy",
     },
     openSource: {
@@ -428,9 +428,9 @@ export const content = {
     },
     privacy: {
       eyebrow: "默认保护隐私",
-      title: "只播放你的文件，\n不碰你的*数据*。",
+      title: "你的媒体与记录，\n都留在*本机*。",
       description:
-        "不用注册账号，没有数据统计，也没有广告。你的视频和观看记录只留在自己的 Mac 上，连字幕的生成和翻译也在本机完成。隐私政策一分钟就能读完，因为确实没什么可写的。",
+        "不用注册账号，没有广告，也不追踪播放行为。你的视频和观看记录只留在自己的 Mac 上，连字幕的生成和翻译也在本机完成。已有的更新检查会附带少量安装统计信息，不增加请求，也不发送播放数据。具体发送什么，隐私政策里都写清楚了。",
       action: "阅读隐私政策",
     },
     openSource: {
