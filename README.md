@@ -1,33 +1,76 @@
-# Khua
+<img src="Design/AppIcon/AppIcon.appiconset/AppIcon-128.png" width="96" height="96" alt="Khua Player app icon">
 
-Khua is an open-source, native video player for Apple Silicon Macs. It
-combines VideoToolbox decoding, a Metal rendering pipeline, and a deliberately
-small FFmpeg fallback build for broad local-file support without a Homebrew
-runtime dependency.
+# Khua Player
 
-The project currently targets arm64 Macs running macOS 14 or later. Building
-requires Xcode with the macOS 26.4 SDK or later. Subtitle generation and
-translation require macOS 26 at runtime; basic playback still supports macOS 14.
-Motion+ also requires macOS 26 and a device supporting system frame-rate conversion.
+Khua Player is a lightweight, native video player built for modern macOS and Apple silicon.
 
-## Highlights
+Get smoother motion with frame interpolation, generate and translate subtitles on your Mac,
+and keep watching the playable parts of damaged or unfinished files.
 
-- Native Metal video rendering with IOSurface-backed zero-copy paths
-- VideoToolbox hardware decoding with a minimal FFmpeg/dav1d fallback
-- MKV, MP4, MOV, WebM, AVI, MPEG-TS, FLV, WMV, and common audio containers
-- HDR/EDR presentation, color conversion, and HDR-to-SDR tone mapping
-- Native multichannel audio output and A/V synchronization through AudioUnit
-- On-device subtitle generation and translation on supported macOS 26 systems
-- Optional EDR enhancement for SDR video on compatible displays
-- Motion+ adaptive frame interpolation and hold-to-compare preview
-- Best-effort recovery and content mapping for damaged or incomplete downloads
-- Particle Star Trail, Liquid, and Classic timelines
-- Embedded and external text subtitles rendered with libass
-- Finder document associations and a Quick Look preview extension
-- Per-format controls for making Khua the default video or audio player
-- Interface localization for 17 languages
+Designed from the ground up for fast, responsive, and efficient playback.
 
-## Build
+[**Download for macOS**](https://khua.app/download) ·
+[Website](https://khua.app) ·
+[Release history](https://khua.app/releases) ·
+[Build from source](#build-from-source)
+
+Apple silicon · macOS 14 or later · Open source
+
+Download the DMG, open it, and drag **Khua** to **Applications**. The official
+download is Developer ID signed, notarized, and stapled; no extra codec packs
+or Homebrew installation are needed to use it.
+
+## More than playback
+
+- **Smoother motion with Motion+.** Adaptive frame interpolation makes movement
+  smoother. Hold **C** to compare the original and enhanced video side by side.
+- **Subtitles, made on your Mac.** Generate subtitles from video audio, translate
+  generated or existing text subtitles, and save the results as SRT. Processing
+  stays on your Mac. Requires macOS 26; macOS may download a language model first.
+- **Playback for imperfect files.** Khua attempts to recover playable content
+  from damaged or partially downloaded files, marks problem areas on the
+  timeline, and leaves the original file unchanged. Recovery is best-effort;
+  not every damaged or incomplete file can be played.
+- **More from your display.** Watch HDR video, use tone mapping on SDR displays,
+  or give everyday SDR video extra brightness with Brightness+ on compatible displays.
+- **A timeline drawn from your video.** Particle Star Trail takes its colors
+  from the video itself. Liquid and Classic styles are also available.
+- **Preview right in Finder.** Select a supported video and press **Space** for
+  Quick Look playback, including MKV. Set Khua as the default player by file format.
+
+Motion+ requires macOS 26 and a supported Mac. See [Requirements](#requirements)
+for feature availability.
+
+## Everyday essentials
+
+- **Broad format support:** MKV, MP4, MOV, WebM, AVI, MPEG-TS, FLV, WMV, and common
+  audio formats, with hardware decoding where supported and a bundled fallback.
+- **Subtitles that travel with your video:** embedded and external text subtitles,
+  including subtitle files in the same folder. Khua does not search for or download subtitles.
+- **Natural-sounding speed control:** hold Space for Turbo playback, then release
+  to return to normal speed. Voices keep their pitch.
+- **Native multichannel audio:** 5.1 and 7.1 output on supported audio devices.
+- **A familiar Mac experience:** playback resume, frame stepping, screenshots,
+  multiple playback windows, and an interface available in 17 languages.
+- **Private by design:** no account, ads, or playback analytics. Your media and
+  playback history stay on your Mac. See the [privacy policy](PRIVACY.md).
+
+## Requirements
+
+| Feature | Requirements |
+|---|---|
+| Basic playback and Quick Look | Apple silicon Mac running macOS 14 or later |
+| Motion+ frame interpolation | macOS 26 and a Mac supporting system frame-rate conversion |
+| Subtitle generation and translation | macOS 26; language availability depends on macOS, which may download language models on first use |
+| Brightness+ | A compatible display with available extended brightness headroom |
+
+Intel Macs are not supported. iPhone and iPad support is planned, but only the
+Mac app is currently available.
+
+## Build from source
+
+Building requires an Apple silicon Mac and Xcode with the macOS 26.4 SDK or later.
+You do not need the build tools to use the [official download](https://khua.app/download).
 
 Install the build tools once:
 
@@ -103,8 +146,8 @@ automatically by default and expose an App-menu toggle to disable that behavior.
 The application does not collect or transmit playback data. See
 [PRIVACY.md](PRIVACY.md) for the current behavior.
 
-Khua source is available under the [MIT License](LICENSE). The media and
-subtitle libraries retain their own licenses; see
+Khua's own source code is available under the [MIT License](LICENSE).
+Third-party components retain their own licenses; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and
 [`ThirdParty/Licenses`](ThirdParty/Licenses). Distributors are responsible for
 satisfying all third-party license obligations.

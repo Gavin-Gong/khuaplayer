@@ -2428,7 +2428,7 @@ section > canvas {
   grid-template-columns: minmax(0, 1.4fr) minmax(18rem, 0.8fr);
 }
 
-.open-section .button-outline {
+.open-section .button-row {
   margin-top: 2.25rem;
 }
 

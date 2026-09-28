@@ -42,12 +42,13 @@ npx wrangler deploy --env production
 `wrangler.jsonc` owns the domain, bindings, compatibility date, and caching
 boundary. Only `dist/client` is public, never repository notes, source maps,
 signing materials, or `.build`. Privacy and license text are copied into that
-directory at build time, so these links work even before GitHub is public.
+directory at build time, so these links do not depend on GitHub availability.
 Do not change repository visibility as part of website deployment.
-The repository is currently private. Source links are hidden and the source
-section says the public release is being prepared. After verifying anonymous
-GitHub access, build with `VITE_SOURCE_PUBLIC=true` to restore the original
-source links and copy; no redesign or repository visibility mutation is needed.
+The source repository at `https://github.com/nake13/khuaplayer` is public.
+Source and issue links are always included in normal builds; no visibility
+environment variable is required. Shared GitHub destinations live in
+`src/repository.js`. Verify both links without GitHub authentication when
+changing them, and keep the English and Chinese open-source copy in sync.
 
 ## Prepare a release
 

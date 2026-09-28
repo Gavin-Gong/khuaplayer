@@ -29,13 +29,13 @@ export const content = {
       primaryAction: "Download",
     },
     hero: {
-      eyebrow: "Local media player for macOS",
+      eyebrow: "Open-source media player for macOS",
       title: "A media player\nbuilt for *{}*.",
       rotating: ["speed", "responsiveness", "fluidity", "efficiency", "performance"],
       description:
         "Double-click a file and it's playing. MKV, MP4, HDR, 4K, even files that are damaged or still downloading. A light, quiet app built for Apple silicon.",
       primaryAction: "Download for macOS",
-      secondaryAction: "View source",
+      secondaryAction: "View on GitHub",
       compatibility: "Apple silicon · macOS 14 or later",
     },
     performance: {
@@ -188,8 +188,9 @@ export const content = {
       eyebrow: "Open source",
       title: "Open source.\nSee for *yourself.*",
       description:
-        "Khua's source is public under the MIT license. Read how it works, build it yourself, or help make it better.",
-      action: "Read the source",
+        "Khua Player's source is on GitHub under the MIT license. Explore how it works, build it on your Mac, or contribute a fix. Bug reports and ideas are welcome, too.",
+      action: "Explore on GitHub",
+      feedbackAction: "Report an issue",
     },
     details: {
       eyebrow: "The small things",
@@ -248,7 +249,8 @@ export const content = {
     footer: {
       tagline: "A fast, private, open-source media player for macOS.",
       links: {
-        source: "Source",
+        source: "GitHub",
+        issues: "Report an issue",
         license: "License",
         privacy: "Privacy",
       },
@@ -279,13 +281,13 @@ export const content = {
       primaryAction: "下载",
     },
     hero: {
-      eyebrow: "macOS 本地媒体播放器",
+      eyebrow: "开源 macOS 多媒体播放器",
       title: "为*{}*而生的\n多媒体播放器。",
       rotating: ["速度", "迅捷", "流畅", "效率", "性能"],
       description:
         "双击就播。MKV、MP4、HDR、4K 都不在话下，没下完、有损坏的文件也能播。轻巧安静，专为 Apple 芯片打造。",
       primaryAction: "下载 macOS 版",
-      secondaryAction: "查看源码",
+      secondaryAction: "在 GitHub 上查看",
       compatibility: "Apple 芯片 · macOS 14 及以上",
     },
     performance: {
@@ -436,8 +438,9 @@ export const content = {
     openSource: {
       eyebrow: "开放源代码",
       title: "源码公开，\n眼见为*实*。",
-      description: "Khua 的源代码以 MIT 许可证公开。你可以看看它是怎么做的，自己编译一份，或者一起把它做得更好。",
-      action: "阅读源码",
+      description: "Khua Player 的源码已在 GitHub 公开，采用 MIT 许可证。你可以阅读实现、自己编译，或提交改进。发现问题、有新想法，也欢迎来交流。",
+      action: "在 GitHub 查看源码",
+      feedbackAction: "反馈问题",
     },
     details: {
       eyebrow: "细微之处",
@@ -491,7 +494,8 @@ export const content = {
     footer: {
       tagline: "一款快速、私密、开源的 macOS 播放器。",
       links: {
-        source: "源代码",
+        source: "GitHub",
+        issues: "反馈问题",
         license: "许可证",
         privacy: "隐私",
       },

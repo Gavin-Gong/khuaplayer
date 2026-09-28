@@ -15,4 +15,5 @@
 .release-checksum { margin-top: 1.25rem; font-size: 0.8rem; color: var(--muted); }
 .release-checksum summary { cursor: pointer; width: fit-content; }
 .release-checksum code { display: block; overflow-wrap: anywhere; margin-top: 0.6rem; }
-.releases-bottom { max-width: 64rem; margin: 0 auto; padding: 1rem var(--gutter) 4rem; }
+.releases-bottom { display: flex; flex-wrap: wrap; gap: 1rem 2rem; max-width: 64rem; margin: 0 auto; padding: 1rem var(--gutter) 4rem; }
+.releases-bottom a:hover { text-decoration: underline; }

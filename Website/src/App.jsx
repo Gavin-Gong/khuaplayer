@@ -16,7 +16,7 @@ import { SubtitleDemo } from "./SubtitleDemo.jsx";
 import { QuickLookDemo } from "./QuickLookDemo.jsx";
 import { BoostDemos } from "./BoostDemos.jsx";
 import { ReleaseBadge } from "./Releases.jsx";
-import { sourcePublic, repositoryUrl } from "./repository.js";
+import { repositoryUrl, repositoryIssuesUrl } from "./repository.js";
 
 const REPOSITORY_URL = repositoryUrl;
 const DOWNLOAD_URL = import.meta.env.VITE_DOWNLOAD_URL || "/download";
@@ -297,7 +297,7 @@ export function App() {
   useEffect(() => {
     document.documentElement.lang = isChinese ? "zh-Hans" : "en";
     document.title = t.meta.documentTitle;
-    const description = sourcePublic ? t.meta.description : t.meta.description.replace("open-source ", "").replace("开源 ", "");
+    const description = t.meta.description;
     document.querySelector('meta[name="description"]')?.setAttribute("content", description);
     try {
       window.localStorage.setItem("khua-site-locale", locale);
@@ -539,10 +539,11 @@ export function App() {
                     <DownloadSimple aria-hidden="true" />
                     <span>{t.hero.primaryAction}</span>
                   </ExternalLink>
-                  {sourcePublic && <ExternalLink className="text-link" href={REPOSITORY_URL}>
+                  <ExternalLink className="text-link" href={REPOSITORY_URL}>
+                    <GithubLogo aria-hidden="true" />
                     <span>{t.hero.secondaryAction}</span>
                     <ArrowUpRight aria-hidden="true" />
-                  </ExternalLink>}
+                  </ExternalLink>
                 </div>
                 <span className="compatibility">{t.hero.compatibility}</span>
                 <ReleaseBadge locale={locale} />
@@ -812,16 +813,22 @@ export function App() {
             <div className="feature-heading" data-reveal>
               <Eyebrow index="10">{t.openSource.eyebrow}</Eyebrow>
               <h2>
-                <Headline text={sourcePublic ? t.openSource.title : (isChinese ? "开源版本，\n正在*准备*。" : "Source release.\nComing *soon.*")} />
+                <Headline text={t.openSource.title} />
               </h2>
             </div>
             <div className="feature-copy" data-reveal>
-              <p>{sourcePublic ? t.openSource.description : (isChinese ? "我们正在准备公开 Khua Player 的 MIT 许可源码。源码发布后，你可以查看实现、自己构建，也欢迎参与改进。" : "We are preparing the MIT-licensed source release of Khua Player. Once published, you will be able to explore the code, build it yourself, and contribute.")}</p>
-              {sourcePublic && <ExternalLink className="button button-outline" href={REPOSITORY_URL}>
-                <GithubLogo aria-hidden="true" />
-                <span>{t.openSource.action}</span>
-                <ArrowUpRight aria-hidden="true" />
-              </ExternalLink>}
+              <p>{t.openSource.description}</p>
+              <div className="button-row">
+                <ExternalLink className="button button-outline" href={REPOSITORY_URL}>
+                  <GithubLogo aria-hidden="true" />
+                  <span>{t.openSource.action}</span>
+                  <ArrowUpRight aria-hidden="true" />
+                </ExternalLink>
+                <ExternalLink className="text-link" href={repositoryIssuesUrl}>
+                  <span>{t.openSource.feedbackAction}</span>
+                  <ArrowUpRight aria-hidden="true" />
+                </ExternalLink>
+              </div>
             </div>
           </div>
           <RegistrationMark className="open-registration" data-parallax="-0.1" />
@@ -864,10 +871,10 @@ export function App() {
                 <DownloadSimple aria-hidden="true" />
                 <span>{t.closing.primaryAction}</span>
               </ExternalLink>
-              {sourcePublic && <ExternalLink className="text-link text-link-light" href={REPOSITORY_URL}>
+              <ExternalLink className="text-link text-link-light" href={REPOSITORY_URL}>
                 <span>{t.closing.secondaryAction}</span>
                 <ArrowUpRight aria-hidden="true" />
-              </ExternalLink>}
+              </ExternalLink>
             </div>
           </div>
           <RegistrationMark className="closing-registration" data-parallax="0.12" />
@@ -879,14 +886,15 @@ export function App() {
           <BrandIcon />
           <div>
             <strong>{t.nav.brand}</strong>
-            <p>{sourcePublic ? t.footer.tagline : t.footer.tagline.replace(", open-source", "").replace("、开源", "")}</p>
+            <p>{t.footer.tagline}</p>
           </div>
         </div>
         <div className="footer-meta">
           <span>{t.footer.compatibility}</span>
           <div className="footer-links">
             <a href="/releases">{isChinese ? "版本记录" : "Releases"}</a>
-            {sourcePublic && <ExternalLink href={REPOSITORY_URL}>{t.footer.links.source}</ExternalLink>}
+            <ExternalLink href={REPOSITORY_URL}>{t.footer.links.source}</ExternalLink>
+            <ExternalLink href={repositoryIssuesUrl}>{t.footer.links.issues}</ExternalLink>
             <ExternalLink href={LICENSE_URL}>{t.footer.links.license}</ExternalLink>
             <ExternalLink href={PRIVACY_URL}>{t.footer.links.privacy}</ExternalLink>
           </div>

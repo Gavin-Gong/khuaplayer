@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { parseCatalog } from "../cloudflare/catalog.ts";
+import { repositoryUrl, repositoryIssuesUrl } from "./repository.js";
 import "./releases.css";
 
 function useReleases() {
@@ -73,7 +74,11 @@ export function Releases() {
           </article>
         ))}
       </main>
-      <footer className="releases-bottom"><a href="/">{zh ? "← 返回官网" : "← Back to Khua Player"}</a></footer>
+      <footer className="releases-bottom">
+        <a href="/">{zh ? "← 返回官网" : "← Back to Khua Player"}</a>
+        <a href={repositoryUrl} target="_blank" rel="noreferrer">{zh ? "GitHub 源码" : "Source on GitHub"}</a>
+        <a href={repositoryIssuesUrl} target="_blank" rel="noreferrer">{zh ? "反馈问题" : "Report an issue"}</a>
+      </footer>
     </div>
   );
 }
