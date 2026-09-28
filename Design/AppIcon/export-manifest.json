@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "file": "KhuaPlayer-StaticMaster-1024.png",
+    "sha256": "e0840f48d183a096ad5a3f5bcc824f78646fa6ac3dea8a97b3b2bbd16959342b",
+    "width": 1024,
+    "height": 1024,
+    "mode": "RGB",
+    "colorSpace": "sRGB IEC61966-2.1"
+  },
+  "export": {
+    "alpha": false,
+    "colorSpace": "sRGB IEC61966-2.1",
+    "resampling": "Pillow LANCZOS; every size is rendered directly from the 1024 px master",
+    "pillowVersion": "12.3.0"
+  },
+  "files": [
+    {
+      "file": "AppIcon-16.png",
+      "sha256": "cd017832d898b062a83976cd517b6867c1ca5162245b75a28a988a065ce85679",
+      "width": 16,
+      "height": 16,
+      "mode": "RGB"
+    },
+    {
+      "file": "AppIcon-32.png",
+      "sha256": "2589ced501237c445ca49b560b7da869b937778a827941b64f10cf399d0b8041",
+      "width": 32,
+      "height": 32,
+      "mode": "RGB"
+    },
+    {
+      "file": "AppIcon-64.png",
+      "sha256": "01d6c687c22cabe83b81e53ff9bf474b93667d34027baeca4984b729f6377358",
+      "width": 64,
+      "height": 64,
+      "mode": "RGB"
+    },
+    {
+      "file": "AppIcon-128.png",
+      "sha256": "b99717636653363f3159a2d9190d6c883acd5f12060e48290911ca91151e5f57",
+      "width": 128,
+      "height": 128,
+      "mode": "RGB"
+    },
+    {
+      "file": "AppIcon-256.png",
+      "sha256": "b0d46719821d9e797740072b284cf46ba6b38794acadd88bd9d6bfbb350e066e",
+      "width": 256,
+      "height": 256,
+      "mode": "RGB"
+    },
+    {
+      "file": "AppIcon-512.png",
+      "sha256": "6bfdd25d33bd4804615117ba56ad0fffc99ddb7571274c064756904be83b7009",
+      "width": 512,
+      "height": 512,
+      "mode": "RGB"
+    },
+    {
+      "file": "AppIcon-1024.png",
+      "sha256": "2ea45d13b278d38a151c9fc6b8d99f9f0034b8e6733f19126bff95471081df88",
+      "width": 1024,
+      "height": 1024,
+      "mode": "RGB"
+    }
+  ]
+}
