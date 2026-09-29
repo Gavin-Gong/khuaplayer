@@ -1072,7 +1072,7 @@ static int spDisplaySizeProbeInterrupt(void *opaque) {
 }
 
 + (CGSize)probeDisplaySizeForURL:(NSURL *)url
-              cancellationToken:(SPProbeCancellationToken *)token {
+               cancellationToken:(SPProbeCancellationToken *)token {
 
     if (token.isCancelled) return CGSizeZero;
     SPDisplaySizeProbeContext probeContext = {spNowUs() + 3000000, token};
@@ -1109,6 +1109,40 @@ static int spDisplaySizeProbeInterrupt(void *opaque) {
     }
     avformat_close_input(&ctx);
     return result;
+}
+
++ (double)probeDurationForURL:(NSURL *)url
+             cancellationToken:(SPProbeCancellationToken *)token {
+    if (token.isCancelled) return 0;
+    SPDisplaySizeProbeContext probeContext = {spNowUs() + 3000000, token};
+    AVFormatContext *ctx = avformat_alloc_context();
+    if (!ctx) return 0;
+    ctx->interrupt_callback = {spDisplaySizeProbeInterrupt, &probeContext};
+    ctx->probesize = 4 << 20;
+    ctx->max_analyze_duration = AV_TIME_BASE / 2;
+    if (avformat_open_input(&ctx, url.fileSystemRepresentation, nullptr, nullptr) < 0) {
+        return 0;
+    }
+    if (avformat_find_stream_info(ctx, nullptr) < 0 || token.isCancelled) {
+        avformat_close_input(&ctx);
+        return 0;
+    }
+
+    int64_t durationUs = 0;
+    if (ctx->duration != AV_NOPTS_VALUE && ctx->duration > 0) {
+        durationUs = ctx->duration;
+    } else {
+        for (unsigned i = 0; i < ctx->nb_streams; ++i) {
+            AVStream *stream = ctx->streams[i];
+            if (stream->duration == AV_NOPTS_VALUE || stream->duration <= 0 ||
+                stream->time_base.num <= 0 || stream->time_base.den <= 0) continue;
+            durationUs = std::max(durationUs,
+                                  av_rescale_q(stream->duration, stream->time_base,
+                                               AVRational{1, 1000000}));
+        }
+    }
+    avformat_close_input(&ctx);
+    return durationUs > 0 ? (double)durationUs / 1e6 : 0;
 }
 
 static int spProbeStreamHasBFrames(enum AVCodecID cid, NSData *extra, NSData *pktData) {
@@ -3989,9 +4023,24 @@ static BOOL spThumbsEnabled(void) {
 }
 
 - (BOOL)loadSubtitleFile:(NSString *)path
-                  silent:(BOOL)silent
-              completion:(void (^)(BOOL))completion {
+                   silent:(BOOL)silent
+               completion:(void (^)(BOOL))completion {
+    return [self loadSubtitleFilesAtPath:path
+                           secondaryPath:nil
+                                  silent:silent
+                              completion:completion];
+}
+
+- (BOOL)loadSubtitleFilesAtPath:(NSString *)primaryPath
+                  secondaryPath:(NSString *)secondaryPath
+                          silent:(BOOL)silent
+                      completion:(void (^)(BOOL))completion {
     if (!_subtitleRenderer) {
+        if (completion) dispatch_async(dispatch_get_main_queue(),
+                                       ^{ completion(NO); });
+        return NO;
+    }
+    if (!primaryPath.length && !secondaryPath.length) {
         if (completion) dispatch_async(dispatch_get_main_queue(),
                                        ^{ completion(NO); });
         return NO;
@@ -4000,9 +4049,10 @@ static BOOL spThumbsEnabled(void) {
 
     [_subtitleRenderer invalidatePendingLoads];
 
-    NSString *pathCopy = [path copy];
+    NSString *primaryPathCopy = [primaryPath copy];
+    NSString *secondaryPathCopy = [secondaryPath copy];
 
-    void (^reject)(NSString *) = ^(NSString *reason) {
+    void (^reject)(NSString *, NSString *) = ^(NSString *reason, NSString *failedPath) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (completion) completion(NO);
             if (self->_subLoadGen.load() != loadGen) return;
@@ -4011,7 +4061,7 @@ static BOOL spThumbsEnabled(void) {
                      @selector(playerCore:didFailWithError:)]) {
                 NSString *msg = [NSString stringWithFormat:
                     NSLocalizedString(@"subtitle.load.failed", nil),
-                    pathCopy.lastPathComponent, reason];
+                    failedPath.lastPathComponent, reason];
 
                 [self->_delegate playerCore:self didFailWithError:
                     [self makeErrorWithDomain:@"KhuaPlayer" code:-30 description:msg
@@ -4024,33 +4074,31 @@ static BOOL spThumbsEnabled(void) {
                        silent ? QOS_CLASS_UTILITY : QOS_CLASS_USER_INITIATED, 0), ^{
 
         const unsigned long long kSubCap = 32ull * 1024 * 1024;
-        NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:pathCopy error:nil];
+        NSString *(^readText)(NSString *, NSString **) = ^NSString *(NSString *candidate,
+                                                                       NSString **reasonOut) {
+            NSDictionary *attrs = [[NSFileManager defaultManager]
+                attributesOfItemAtPath:candidate error:nil];
+            if (!attrs || ![attrs[NSFileType] isEqual:NSFileTypeRegular]) {
+                *reasonOut = NSLocalizedString(@"subtitle.load.reason.unreadable", nil);
+                return nil;
+            }
+            unsigned long long fileSize = [attrs[NSFileSize] unsignedLongLongValue];
+            if (fileSize > kSubCap) {
+                SPLOG(@"[Core] 外挂字幕 %lluMB 超过 32MB 上限，拒绝加载: %@",
+                      fileSize >> 20, candidate.lastPathComponent);
+                *reasonOut = NSLocalizedString(@"subtitle.load.reason.tooLarge", nil);
+                return nil;
+            }
 
-        if (!attrs || ![attrs[NSFileType] isEqual:NSFileTypeRegular]) {
-            SPLOG(@"[Core] 外挂字幕属性不可读或非普通文件，拒绝加载: %@",
-                  pathCopy.lastPathComponent);
-            reject(NSLocalizedString(@"subtitle.load.reason.unreadable", nil));
-            return;
-        }
-        unsigned long long fileSize = [attrs[NSFileSize] unsignedLongLongValue];
-        if (fileSize > kSubCap) {
-            SPLOG(@"[Core] 外挂字幕 %lluMB 超过 32MB 上限，拒绝加载: %@",
-                  fileSize >> 20, pathCopy.lastPathComponent);
-            reject(NSLocalizedString(@"subtitle.load.reason.tooLarge", nil));
-            return;
-        }
+            NSFileHandle *fh = [NSFileHandle fileHandleForReadingAtPath:candidate];
+            NSData *data = fh ? [fh readDataUpToLength:(NSUInteger)(kSubCap + 1) error:nil] : nil;
+            [fh closeFile];
+            if (!data || data.length > kSubCap) {
+                *reasonOut = NSLocalizedString(@"subtitle.load.reason.unreadable", nil);
+                return nil;
+            }
 
-        NSFileHandle *fh = [NSFileHandle fileHandleForReadingAtPath:pathCopy];
-        NSData *data = fh ? [fh readDataUpToLength:(NSUInteger)(kSubCap + 1) error:nil] : nil;
-        [fh closeFile];
-        if (!data || data.length > kSubCap) {
-            SPLOG(@"[Core] 外挂字幕读取失败或超限，拒绝加载: %@", pathCopy.lastPathComponent);
-            reject(NSLocalizedString(@"subtitle.load.reason.unreadable", nil));
-            return;
-        }
-
-        size_t lineCount = 0;
-        {
+            size_t lineCount = 0;
             const char *p = (const char *)data.bytes;
             const char *end = p + data.length;
             while (p < end && lineCount <= 1000000) {
@@ -4059,45 +4107,59 @@ static BOOL spThumbsEnabled(void) {
                 lineCount++;
                 p = nl + 1;
             }
-        }
-        if (lineCount > 1000000) {
-            SPLOG(@"[Core] 外挂字幕行数超限（>100 万行），拒绝加载: %@",
-                  pathCopy.lastPathComponent);
-            reject(NSLocalizedString(@"subtitle.load.reason.tooManyLines", nil));
-            return;
-        }
-        NSString *text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-        if (!text) {
+            if (lineCount > 1000000) {
+                *reasonOut = NSLocalizedString(@"subtitle.load.reason.tooManyLines", nil);
+                return nil;
+            }
 
-            NSString *converted = nil;
-            NSStringEncoding enc = [NSString stringEncodingForData:data
-                                                   encodingOptions:nil
-                                                   convertedString:&converted
-                                               usedLossyConversion:nil];
-            if (enc != 0) text = converted;
-        }
-        if (!text) {
-            SPLOG(@"[Core] 外挂字幕编码无法识别（非 UTF-8），拒绝加载: %@",
-                  pathCopy.lastPathComponent);
-            reject(NSLocalizedString(@"subtitle.load.reason.encoding", nil));
+            NSString *text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+            if (!text) {
+                NSString *converted = nil;
+                NSStringEncoding enc = [NSString stringEncodingForData:data
+                                                       encodingOptions:nil
+                                                       convertedString:&converted
+                                                   usedLossyConversion:nil];
+                if (enc != 0) text = converted;
+            }
+            if (!text) *reasonOut = NSLocalizedString(@"subtitle.load.reason.encoding", nil);
+            return text;
+        };
+
+        NSString *reason = nil;
+        NSString *primaryText = primaryPathCopy ? readText(primaryPathCopy, &reason) : nil;
+        if (primaryPathCopy && !primaryText) {
+            SPLOG(@"[Core] 外挂主字幕读取失败，拒绝加载: %@", primaryPathCopy.lastPathComponent);
+            reject(reason ?: NSLocalizedString(@"subtitle.load.reason.unreadable", nil), primaryPathCopy);
             return;
         }
+
+        reason = nil;
+        NSString *secondaryText = secondaryPathCopy ? readText(secondaryPathCopy, &reason) : nil;
+        if (secondaryPathCopy && !secondaryText) {
+            SPLOG(@"[Core] 外挂副字幕读取失败，拒绝加载: %@", secondaryPathCopy.lastPathComponent);
+            reject(reason ?: NSLocalizedString(@"subtitle.load.reason.unreadable", nil), secondaryPathCopy);
+            return;
+        }
+
         dispatch_async(dispatch_get_main_queue(), ^{
 
             if (self->_subLoadGen.load() != loadGen) {
                 if (spDebug()) SPLOG(@"[Core] 外挂字幕读取已过期，丢弃: %@",
-                                     pathCopy.lastPathComponent);
+                                     primaryPathCopy.lastPathComponent ?: secondaryPathCopy.lastPathComponent);
                 if (completion) completion(NO);
                 return;
             }
 
-            [self->_subtitleRenderer loadSubtitleText:text completion:^(BOOL ok) {
+            [self->_subtitleRenderer loadSubtitleText:primaryText ?: @""
+                                        secondaryText:secondaryText
+                                           completion:^(BOOL ok) {
                 if (self->_subLoadGen.load() != loadGen) {
                     if (completion) completion(NO);
                     return;
                 }
                 if (!ok) {
-                    reject(NSLocalizedString(@"subtitle.load.reason.noEvents", nil));
+                    reject(NSLocalizedString(@"subtitle.load.reason.noEvents", nil),
+                           primaryPathCopy ?: secondaryPathCopy);
                     return;
                 }
 

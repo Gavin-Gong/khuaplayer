@@ -3,12 +3,29 @@ import Foundation
 enum SPSubtitleAutoload {
     static let subtitleExtensions: Set<String> = ["srt", "ass", "ssa", "vtt"]
 
+    struct LanguageChoice: Equatable {
+        let id: String
+        let titleKey: String
+    }
+
+    static let languageChoices: [LanguageChoice] = [
+        .init(id: "default", titleKey: "subtitle.language.default"),
+        .init(id: "en", titleKey: "subtitle.language.english"),
+        .init(id: "zh", titleKey: "subtitle.language.chinese"),
+        .init(id: "ja", titleKey: "subtitle.language.japanese"),
+        .init(id: "ko", titleKey: "subtitle.language.korean"),
+        .init(id: "es", titleKey: "subtitle.language.spanish"),
+        .init(id: "fr", titleKey: "subtitle.language.french"),
+        .init(id: "de", titleKey: "subtitle.language.german"),
+        .init(id: "ru", titleKey: "subtitle.language.russian"),
+    ]
+
     static func isSubtitleFile(_ url: URL) -> Bool {
         subtitleExtensions.contains(url.pathExtension.lowercased())
     }
 
     private static let languageTags: [String: String] = [
-        "zh": "zh", "chi": "zh", "zho": "zh", "chs": "zh", "cht": "zh",
+        "zh": "zh", "chi": "zh", "zho": "zh", "chs": "zh", "cht": "zh", "cn": "zh",
         "sc": "zh", "tc": "zh", "gb": "zh", "big5": "zh",
         "zh-hans": "zh", "zh-hant": "zh", "zh-cn": "zh", "zh-tw": "zh",
         "zh-hk": "zh", "简体": "zh", "繁體": "zh", "繁体": "zh",
@@ -123,5 +140,67 @@ enum SPSubtitleAutoload {
             }
             return $0.name < $1.name
         }.map(\.name)
+    }
+
+    /// Pick the two sidecars that belong to the current media item. The first
+    /// result follows the normal UI-language ranking; the second prefers a
+    /// different language tag so `Movie.zh.srt` and `Movie.en.srt` become a
+    /// natural primary/secondary pair.
+    static func preferredPair(videoFileName: String,
+                              candidates: [String],
+                              uiLanguage: String,
+                              primaryLanguage: String? = nil,
+                              secondaryLanguage: String? = nil) -> (primary: String?, secondary: String?) {
+        let ranked = rankedMatches(videoFileName: videoFileName,
+                                   candidates: candidates,
+                                   uiLanguage: uiLanguage)
+        let primaryCandidates: [String]
+        if let primaryLanguage, primaryLanguage != "default" {
+            primaryCandidates = ranked.filter {
+                languageTag(videoFileName: videoFileName,
+                            subtitleFileName: $0) == primaryLanguage
+            }
+        } else {
+            primaryCandidates = ranked
+        }
+        guard let primary = primaryCandidates.first else { return (nil, nil) }
+
+        let primaryTag = languageTag(videoFileName: videoFileName,
+                                     subtitleFileName: primary)
+        let remaining = ranked.filter { $0 != primary }
+        if let secondaryLanguage, secondaryLanguage != "default" {
+            let explicit = remaining.first {
+                languageTag(videoFileName: videoFileName,
+                            subtitleFileName: $0) == secondaryLanguage
+            }
+            return (primary, explicit)
+        }
+
+        let taggedSecondary = remaining.first { candidate in
+            guard let language = languageTag(videoFileName: videoFileName,
+                                             subtitleFileName: candidate) else { return false }
+            guard let primaryTag else { return true }
+            return language != primaryTag
+        }
+        let secondary = taggedSecondary ?? remaining.first { candidate in
+            languageTag(videoFileName: videoFileName,
+                        subtitleFileName: candidate) == nil
+        }
+        return (primary, secondary)
+    }
+
+    private static func languageTag(videoFileName: String,
+                                    subtitleFileName: String) -> String? {
+        let videoBase = normalize((videoFileName as NSString).deletingPathExtension)
+        let subtitleBase = normalize((subtitleFileName as NSString).deletingPathExtension)
+        let boundary: Set<Character> = [".", "-", "_", " ", "(", "["]
+        guard subtitleBase.hasPrefix(videoBase),
+              let separator = subtitleBase.dropFirst(videoBase.count).first,
+              boundary.contains(separator) else { return nil }
+        let tags = subtitleBase.dropFirst(videoBase.count)
+            .components(separatedBy: CharacterSet(charactersIn: ". _()[]&+"))
+            .filter { !$0.isEmpty }
+            .map { $0.hasPrefix("-") ? String($0.dropFirst()) : $0 }
+        return tags.compactMap(mapLanguage).first
     }
 }

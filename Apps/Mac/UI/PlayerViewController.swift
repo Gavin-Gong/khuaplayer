@@ -78,6 +78,9 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
     /// from turning a background convenience into a burst of foreground CPU.
     private static let directorySubtitleRankingQueue = DispatchQueue(
         label: "dev.khuaplayer.directory-subtitle-ranking", qos: .utility)
+    private static let playlistDurationQueue = DispatchQueue(
+        label: "dev.khuaplayer.playlist-duration", qos: .utility,
+        attributes: .concurrent)
 
     private let playerView = PlayerView()
     private var core: SPPlayerCore?
@@ -189,6 +192,11 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
 
     private var mediaList: [URL] = []
     private var currentMediaIndex = -1
+    private var playlistPanel: SPPlaylistPanelView?
+    private var playlistVisible = false
+    private var playlistDurations: [String: Double] = [:]
+    private var playlistProbeGeneration: UInt64 = 0
+    private var playlistProbeTokens: [String: SPProbeCancellationToken] = [:]
     private var playlistScanGeneration: UInt64 = 0
     /// Last directory snapshot stays with the window across Previous/Next.
     /// The process-wide index coalesces physical listings across windows; this
@@ -215,6 +223,7 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
     // exactly one balanced grant for the current media and external subtitle.
     private var activeGrantedDocumentURL: URL?
     private var activeGrantedSubtitleURL: URL?
+    private var activeGrantedSecondarySubtitleURL: URL?
 
     private func releaseActiveDocumentGrant() {
         activeGrantedDocumentURL?.stopAccessingSecurityScopedResource()
@@ -224,6 +233,8 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
     private func releaseActiveSubtitleGrant() {
         activeGrantedSubtitleURL?.stopAccessingSecurityScopedResource()
         activeGrantedSubtitleURL = nil
+        activeGrantedSecondarySubtitleURL?.stopAccessingSecurityScopedResource()
+        activeGrantedSecondarySubtitleURL = nil
     }
 
 #endif
@@ -232,6 +243,7 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
 #if SP_APP_STORE
         activeGrantedDocumentURL?.stopAccessingSecurityScopedResource()
         activeGrantedSubtitleURL?.stopAccessingSecurityScopedResource()
+        activeGrantedSecondarySubtitleURL?.stopAccessingSecurityScopedResource()
 #endif
         for token in observerTokens {
             NotificationCenter.default.removeObserver(token)
@@ -257,7 +269,38 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
     private var externalSubtitleCandidates: [URL] = []
     private var directoryAutoSubtitleCandidates: [URL] = []
     private var activeExternalSubtitleURL: URL?
+    private var activeSecondarySubtitleURL: URL?
     private var pendingSubtitleAutoload = false
+    private weak var subtitleSettingsPanel: SubtitleSettingsPanel?
+
+    private static let subtitleAutoLoadKey = "sp.subtitle.autoLoad"
+    private static let subtitlePrimaryLanguageKey = "sp.subtitle.primaryLanguage"
+    private static let subtitleSecondaryLanguageKey = "sp.subtitle.secondaryLanguage"
+    private var subtitleAutoLoadEnabled: Bool {
+        get {
+            guard UserDefaults.standard.object(forKey: Self.subtitleAutoLoadKey) != nil else {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: Self.subtitleAutoLoadKey)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Self.subtitleAutoLoadKey) }
+    }
+
+    private static func subtitleLanguagePreference(forKey key: String) -> String {
+        let raw = UserDefaults.standard.string(forKey: key) ?? "default"
+        return SPSubtitleAutoload.languageChoices.contains(where: { $0.id == raw })
+            ? raw : "default"
+    }
+
+    private var subtitlePrimaryLanguagePreference: String {
+        get { Self.subtitleLanguagePreference(forKey: Self.subtitlePrimaryLanguageKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.subtitlePrimaryLanguageKey) }
+    }
+
+    private var subtitleSecondaryLanguagePreference: String {
+        get { Self.subtitleLanguagePreference(forKey: Self.subtitleSecondaryLanguageKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.subtitleSecondaryLanguageKey) }
+    }
 
     private var pendingExternalSubtitleURL: URL?
     private var userTouchedSubtitleSelection = false
@@ -277,6 +320,7 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
         c.onDisplayAttached = { [weak self] in
             guard let self else { return }
             self.activeExternalSubtitleURL = nil
+            self.activeSecondarySubtitleURL = nil
             self.userTouchedSubtitleSelection = true
         }
         c.onDisplaySelection = { [weak self] in
@@ -525,6 +569,7 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
 
         guard chromeInstalled else { return }
         chromePresenter?.layout(in: view.bounds)
+        layoutPlaylistPanel()
         if let idleHint, !idleHint.isHidden { layoutIdleHint() }
         if let overlay = compareOverlay, !overlay.isHidden { layoutCompareOverlay() }
         if let hud = turboHUD, !hud.isHidden { layoutTurboHUD() }
@@ -640,6 +685,7 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
         c.onVolumeBoostIntent = { [weak self] in self?.handleVolumeBoostIntent() }
         c.onMute = { [weak self] in self?.perform(.toggleMute) }
         c.onFullscreen = { [weak self] in self?.perform(.toggleFullscreen) }
+        c.onPlaylist = { [weak self] in self?.togglePlaylist() }
         c.onRateSelected = { [weak self] rate in self?.perform(.setPlaybackRate(rate)) }
         c.onMotionSmoothingToggle = { [weak self] in
             self?.perform(.toggleFrameInterpolation)
@@ -1588,10 +1634,12 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
 
         mediaList = [url]
         currentMediaIndex = 0
+        refreshPlaylistPanel(startProbes: playlistVisible)
 
         externalSubtitleCandidates.removeAll()
         directoryAutoSubtitleCandidates.removeAll()
         activeExternalSubtitleURL = nil
+        activeSecondarySubtitleURL = nil
         pendingSubtitleAutoload = false
         dropPendingExternalSubtitle()
         userTouchedSubtitleSelection = false
@@ -1704,6 +1752,7 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
             mediaList = list
             currentMediaIndex = 0
         }
+        refreshPlaylistPanel(startProbes: playlistVisible)
 
         scheduleDirectorySubtitleRanking(snapshot, for: mediaURL,
                                          generation: generation,
@@ -1778,56 +1827,79 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
             $0.standardizedFileURL
         })
         let newAutoSet = Set(newAuto.map { $0.standardizedFileURL })
-        let activeStandardized = activeExternalSubtitleURL?.standardizedFileURL
+        let activeStandardized = Set([activeExternalSubtitleURL,
+                                      activeSecondarySubtitleURL].compactMap {
+            $0?.standardizedFileURL
+        })
         var merged = newAuto
         for existing in externalSubtitleCandidates {
             let standardized = existing.standardizedFileURL
             if newAutoSet.contains(standardized) { continue }
             if oldAuto.contains(standardized),
-               standardized != activeStandardized {
+               !activeStandardized.contains(standardized) {
                 continue
             }
             merged.append(existing)
         }
         directoryAutoSubtitleCandidates = newAuto
         externalSubtitleCandidates = merged
-        guard !newAuto.isEmpty else { return }
+        updateSubtitleSettingsPanel()
+        guard subtitleAutoLoadEnabled, !newAuto.isEmpty else { return }
         pendingSubtitleAutoload = true
         maybeRunSubtitleAutoload()
     }
 
-    private func maybeRunSubtitleAutoload() {
+    private func maybeRunSubtitleAutoload(force: Bool = false) {
         guard pendingSubtitleAutoload, hasMediaSession,
               let core, core.state == .playing || core.state == .paused,
-              !userTouchedSubtitleSelection, activeExternalSubtitleURL == nil,
-              !externalSubtitleCandidates.isEmpty else { return }
+              subtitleAutoLoadEnabled, (force || !userTouchedSubtitleSelection),
+              (force || (activeExternalSubtitleURL == nil && activeSecondarySubtitleURL == nil)),
+              !directoryAutoSubtitleCandidates.isEmpty,
+              currentMediaIndex >= 0, currentMediaIndex < mediaList.count else { return }
+
+        let mediaURL = mediaList[currentMediaIndex]
+        let names = directoryAutoSubtitleCandidates.map(\.lastPathComponent)
+        let pair = SPSubtitleAutoload.preferredPair(
+            videoFileName: mediaURL.lastPathComponent,
+            candidates: names,
+            uiLanguage: Bundle.main.preferredLocalizations.first ?? "en",
+            primaryLanguage: subtitlePrimaryLanguagePreference,
+            secondaryLanguage: subtitleSecondaryLanguagePreference)
+        guard let primaryName = pair.primary,
+              let primary = directoryAutoSubtitleCandidates.first(where: {
+                  $0.lastPathComponent == primaryName
+              }) else {
+            pendingSubtitleAutoload = false
+            return
+        }
+        let secondary = pair.secondary.flatMap { name in
+            directoryAutoSubtitleCandidates.first { $0.lastPathComponent == name }
+        }
         pendingSubtitleAutoload = false
-        attemptSubtitleAutoload(index: 0)
+        attemptSubtitleAutoload(primary: primary, secondary: secondary, force: force)
     }
 
-    private func attemptSubtitleAutoload(index: Int) {
-        guard index < externalSubtitleCandidates.count else { return }
-        guard !userTouchedSubtitleSelection else { return }
+    private func attemptSubtitleAutoload(primary: URL, secondary: URL?, force: Bool = false) {
+        guard force || !userTouchedSubtitleSelection else { return }
         let gen = playlistScanGeneration
-        let url = externalSubtitleCandidates[index]
-        let accepted = core?.loadSubtitleFile(url.path, silent: true) { [weak self] ok in
+        let accepted = applyExternalSubtitlePair(primary: primary, secondary: secondary,
+                                                 userInitiated: false) { [weak self] ok in
             guard let self, self.playlistScanGeneration == gen else { return }
             if ok {
-                if self.activeExternalSubtitleURL == nil,
-                   !self.userTouchedSubtitleSelection {
-                    self.activeExternalSubtitleURL = url
+                if !self.userTouchedSubtitleSelection {
                     if spDebugEnabled {
-                        NSLog("[SubScan] 自动加载: %@", url.lastPathComponent)
+                        NSLog("[SubScan] 自动加载: %@%@", primary.lastPathComponent,
+                              secondary.map { " + " + $0.lastPathComponent } ?? "")
                     }
                 }
             } else {
-
-                if let bad = self.externalSubtitleCandidates.firstIndex(of: url) {
-                    self.externalSubtitleCandidates.remove(at: bad)
-                    self.attemptSubtitleAutoload(index: bad)
+                // A single malformed sidecar must not prevent the valid
+                // language from being used. Retry the primary by itself.
+                if secondary != nil {
+                    self.attemptSubtitleAutoload(primary: primary, secondary: nil, force: force)
                 }
             }
-        } ?? false
+        }
         if !accepted { return }
     }
 
@@ -1975,56 +2047,103 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
     }
 
     func loadExternalSubtitle(url: URL) {
+        applyExternalSubtitlePair(primary: url, secondary: activeSecondarySubtitleURL,
+                                  userInitiated: true, completion: nil)
+    }
+
+    @discardableResult
+    private func applyExternalSubtitlePair(primary: URL?, secondary: URL?,
+                                           userInitiated: Bool,
+                                           completion: ((Bool) -> Void)?) -> Bool {
         guard let core, hasMediaSession else {
-            spReleaseSecurityScopedGrant(url)
-            return
+            if let primary { spReleaseSecurityScopedGrant(primary) }
+            if let secondary { spReleaseSecurityScopedGrant(secondary) }
+            completion?(false)
+            return false
+        }
+        if primary == nil && secondary == nil {
+            if userInitiated {
+                yieldDirectoryScanToForegroundIO()
+                userTouchedSubtitleSelection = true
+                captionsUserSelectedOtherSubtitle()
+            }
+            core.selectSubtitleTrack(at: -1)
+            activeExternalSubtitleURL = nil
+            activeSecondarySubtitleURL = nil
+            updateSubtitleSettingsPanel()
+            completion?(true)
+            return true
         }
         let captionSelection: Int?
-        if #available(macOS 26.0, *) {
+        if userInitiated, primary != nil, #available(macOS 26.0, *) {
             captionSelection = captions?.beginExternalSubtitleSelection()
         } else { captionSelection = nil }
         // This path is explicit user input (panel/drop/menu, including a file
         // supplied with the media open), unlike silent directory autoload.
         // Its bounded file read outranks catalogue/OpenPanel background I/O.
-        yieldDirectoryScanToForegroundIO()
-        userTouchedSubtitleSelection = true
+        if userInitiated {
+            yieldDirectoryScanToForegroundIO()
+            userTouchedSubtitleSelection = true
+        }
         let gen = playlistScanGeneration
-        let accepted = core.loadSubtitleFile(url.path, silent: false) { [weak self] ok in
+        let accepted = core.loadSubtitleFiles(
+            atPath: primary?.path,
+            secondaryPath: secondary?.path,
+            silent: !userInitiated) { [weak self] ok in
             guard let self else {
-                spReleaseSecurityScopedGrant(url)
+                if let primary { spReleaseSecurityScopedGrant(primary) }
+                if let secondary { spReleaseSecurityScopedGrant(secondary) }
+                completion?(false)
                 return
             }
             guard self.playlistScanGeneration == gen else {
-                spReleaseSecurityScopedGrant(url)
+                if let primary { spReleaseSecurityScopedGrant(primary) }
+                if let secondary { spReleaseSecurityScopedGrant(secondary) }
+                completion?(false)
                 return
             }
             if #available(macOS 26.0, *), let captionSelection {
                 self.captions?.completeExternalSubtitleSelection(captionSelection, succeeded: ok)
             }
             guard ok else {
-                spReleaseSecurityScopedGrant(url)
+                if let primary { spReleaseSecurityScopedGrant(primary) }
+                if let secondary { spReleaseSecurityScopedGrant(secondary) }
+                completion?(false)
                 return
             }
 #if SP_APP_STORE
-            self.releaseActiveSubtitleGrant()
-            self.activeGrantedSubtitleURL = url
+            if userInitiated {
+                self.releaseActiveSubtitleGrant()
+                self.activeGrantedSubtitleURL = primary
+                self.activeGrantedSecondarySubtitleURL = secondary
+            }
 #endif
-            self.activeExternalSubtitleURL = url
+            self.activeExternalSubtitleURL = primary
+            self.activeSecondarySubtitleURL = secondary
             if spDebugEnabled {
-                NSLog("[SubScan] 手动加载生效: %@", url.lastPathComponent)
+                NSLog("[SubScan] %@加载生效: %@%@", userInitiated ? "手动" : "自动",
+                      primary?.lastPathComponent ?? "(无主字幕)",
+                      secondary.map { " + " + $0.lastPathComponent } ?? "")
             }
-            let standardized = url.standardizedFileURL
-            if !self.externalSubtitleCandidates
-                .contains(where: { $0.standardizedFileURL == standardized }) {
-                self.externalSubtitleCandidates.append(url)
+            for url in [primary, secondary].compactMap({ $0 }) {
+                let standardized = url.standardizedFileURL
+                if !self.externalSubtitleCandidates
+                    .contains(where: { $0.standardizedFileURL == standardized }) {
+                    self.externalSubtitleCandidates.append(url)
+                }
             }
+            self.updateSubtitleSettingsPanel()
+            completion?(true)
         }
         if !accepted {
             if #available(macOS 26.0, *), let captionSelection {
                 captions?.completeExternalSubtitleSelection(captionSelection, succeeded: false)
             }
-            spReleaseSecurityScopedGrant(url)
+            if let primary { spReleaseSecurityScopedGrant(primary) }
+            if let secondary { spReleaseSecurityScopedGrant(secondary) }
+            completion?(false)
         }
+        return accepted
     }
 
     // Closing a window persists resume state, stops the pipeline, and clears the
@@ -2061,9 +2180,14 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
         directorySnapshot = nil
         mediaList.removeAll(keepingCapacity: false)
         currentMediaIndex = -1
+        cancelPlaylistDurationProbes()
+        playlistDurations.removeAll(keepingCapacity: false)
+        playlistVisible = false
+        layoutPlaylistPanel()
         externalSubtitleCandidates.removeAll()
         directoryAutoSubtitleCandidates.removeAll()
         activeExternalSubtitleURL = nil
+        activeSecondarySubtitleURL = nil
         pendingSubtitleAutoload = false
         dropPendingExternalSubtitle()
         userTouchedSubtitleSelection = false
@@ -2107,6 +2231,79 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
         open(url: mediaList[prev])
     }
 
+    private func togglePlaylist() {
+        guard hasMediaSession else { return }
+        if playlistPanel == nil {
+            let panel = SPPlaylistPanelView()
+            panel.onSelect = { [weak self] url in
+                self?.open(url: url)
+            }
+            panel.onClose = { [weak self] in
+                self?.playlistVisible = false
+                self?.layoutPlaylistPanel()
+            }
+            view.addSubview(panel, positioned: .above, relativeTo: nil)
+            playlistPanel = panel
+        }
+        playlistVisible.toggle()
+        layoutPlaylistPanel()
+        if playlistVisible {
+            refreshPlaylistPanel(startProbes: true)
+            playlistPanel?.revealSelection()
+        }
+    }
+
+    private func layoutPlaylistPanel() {
+        guard let panel = playlistPanel else { return }
+        let width = min(360, max(280, view.bounds.width * 0.34))
+        panel.frame = NSRect(x: max(0, view.bounds.width - width), y: 0,
+                             width: min(width, view.bounds.width), height: view.bounds.height)
+        panel.isHidden = !playlistVisible
+    }
+
+    private func cancelPlaylistDurationProbes() {
+        playlistProbeGeneration &+= 1
+        for token in playlistProbeTokens.values { token.cancel() }
+        playlistProbeTokens.removeAll()
+    }
+
+    private func refreshPlaylistPanel(startProbes: Bool) {
+        guard let panel = playlistPanel else { return }
+        if let core, currentMediaIndex >= 0, currentMediaIndex < mediaList.count,
+           core.duration > 0 {
+            playlistDurations[mediaList[currentMediaIndex].standardizedFileURL.path] = core.duration
+        }
+        let rows = mediaList.map { url in
+            SPPlaylistPanelView.Item(
+                url: url,
+                duration: playlistDurations[url.standardizedFileURL.path])
+        }
+        panel.update(items: rows, selectedIndex: currentMediaIndex)
+        guard startProbes, playlistVisible else { return }
+
+        cancelPlaylistDurationProbes()
+        let generation = playlistProbeGeneration
+        for url in mediaList {
+            let path = url.standardizedFileURL.path
+            guard playlistDurations[path] == nil else { continue }
+            let token = SPProbeCancellationToken()
+            playlistProbeTokens[path] = token
+            Self.playlistDurationQueue.async { [weak self] in
+                let duration = SPPlayerCore.probeDuration(for: url,
+                                                          cancellationToken: token)
+                DispatchQueue.main.async {
+                    guard let self,
+                          self.playlistVisible,
+                          self.playlistProbeGeneration == generation,
+                          self.playlistProbeTokens[path] === token else { return }
+                    self.playlistProbeTokens.removeValue(forKey: path)
+                    if duration > 0 { self.playlistDurations[path] = duration }
+                    self.refreshPlaylistPanel(startProbes: false)
+                }
+            }
+        }
+    }
+
     func playerCore(_ core: SPPlayerCore, didChange state: SPPlayerState) {
         playbackSleep.update(isPlaying: state == .playing, hasVideo: hasVideoSession)
         playbackCursor?.setHasVideo(hasVideoSession)
@@ -2145,6 +2342,9 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
 
             hasMediaSession = false
             playbackCursor?.setHasVideo(false)
+            cancelPlaylistDurationProbes()
+            playlistVisible = false
+            layoutPlaylistPanel()
             playlistScanGeneration &+= 1
             cancelDirectoryScanForSessionBoundary()
             openMediaPath = nil
@@ -2152,6 +2352,7 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
             externalSubtitleCandidates.removeAll()
             directoryAutoSubtitleCandidates.removeAll()
             activeExternalSubtitleURL = nil
+            activeSecondarySubtitleURL = nil
             pendingSubtitleAutoload = false
             dropPendingExternalSubtitle()
             captionsMediaWillClose()
@@ -2267,6 +2468,10 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
     }
 
     func playerCore(_ core: SPPlayerCore, didUpdatePosition position: Double, duration: Double) {
+        if currentMediaIndex >= 0, currentMediaIndex < mediaList.count {
+            playlistDurations[mediaList[currentMediaIndex].standardizedFileURL.path] = duration
+            if playlistVisible { refreshPlaylistPanel(startProbes: false) }
+        }
         captionsAttachIfNeeded()
         captionsAutomationHookIfNeeded()
         // First-frame presentation publishes a position edge. This makes the
@@ -3182,20 +3387,90 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
     }
 
     private func presentSubtitlePanel() {
+        guard let window = view.window, hasMediaSession else { return }
+        if let panel = subtitleSettingsPanel {
+            updateSubtitleSettingsPanel()
+            if panel.sheetParent == nil { window.beginSheet(panel) }
+            panel.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let panel = SubtitleSettingsPanel(
+            candidates: externalSubtitleCandidates,
+            primary: activeExternalSubtitleURL,
+            secondary: activeSecondarySubtitleURL,
+            scale: core?.subtitleScale ?? 1.0,
+            autoLoad: subtitleAutoLoadEnabled,
+            primaryLanguage: subtitlePrimaryLanguagePreference,
+            secondaryLanguage: subtitleSecondaryLanguagePreference)
+        subtitleSettingsPanel = panel
+        panel.onSelectionChanged = { [weak self] primary, secondary in
+            self?.applyExternalSubtitlePair(primary: primary, secondary: secondary,
+                                            userInitiated: true, completion: nil)
+        }
+        panel.onScaleChanged = { [weak self] scale in
+            self?.core?.setSubtitleScale(scale)
+        }
+        panel.onAutoLoadChanged = { [weak self] enabled in
+            guard let self else { return }
+            self.subtitleAutoLoadEnabled = enabled
+            if enabled {
+                self.pendingSubtitleAutoload = true
+                self.maybeRunSubtitleAutoload(force: true)
+            }
+        }
+        panel.onLanguageChanged = { [weak self] primary, secondary in
+            guard let self else { return }
+            self.subtitlePrimaryLanguagePreference = primary
+            self.subtitleSecondaryLanguagePreference = secondary
+            guard self.subtitleAutoLoadEnabled else { return }
+            self.pendingSubtitleAutoload = true
+            self.maybeRunSubtitleAutoload(force: true)
+        }
+        panel.onChooseFile = { [weak self, weak panel] slot in
+            guard let self else { return }
+            if let parent = panel?.sheetParent { parent.endSheet(panel!) }
+            DispatchQueue.main.async { [weak self] in
+                self?.presentSubtitleFilePanel(for: slot)
+            }
+        }
+        window.beginSheet(panel)
+    }
+
+    private func presentSubtitleFilePanel(for slot: SubtitleSettingsPanel.Slot) {
         guard let window = view.window else { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = ["ass", "ssa", "srt", "vtt"]
             .compactMap { UTType(filenameExtension: $0) }
         panel.allowsMultipleSelection = false
-        panel.beginSheetModal(for: window) { [weak self] resp in
-            guard resp == .OK, let url = panel.url else { return }
-
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
             guard let self else {
                 spReleaseSecurityScopedGrant(url)
                 return
             }
-            self.loadExternalSubtitle(url: url)
+            switch slot {
+            case .primary:
+                self.applyExternalSubtitlePair(primary: url,
+                                               secondary: self.activeSecondarySubtitleURL,
+                                               userInitiated: true, completion: nil)
+            case .secondary:
+                self.applyExternalSubtitlePair(primary: self.activeExternalSubtitleURL,
+                                               secondary: url,
+                                               userInitiated: true, completion: nil)
+            }
         }
+    }
+
+    private func updateSubtitleSettingsPanel() {
+        subtitleSettingsPanel?.update(
+            candidates: externalSubtitleCandidates,
+            primary: activeExternalSubtitleURL,
+            secondary: activeSecondarySubtitleURL,
+            scale: core?.subtitleScale ?? 1.0,
+            autoLoad: subtitleAutoLoadEnabled,
+            primaryLanguage: subtitlePrimaryLanguagePreference,
+            secondaryLanguage: subtitleSecondaryLanguagePreference)
     }
 
     @objc func subtitleScaleAction(_ sender: NSMenuItem) {
@@ -3282,6 +3557,7 @@ final class PlayerViewController: NSViewController, SPPlayerCoreDelegate, NSMenu
 
         userTouchedSubtitleSelection = true
         activeExternalSubtitleURL = nil
+        activeSecondarySubtitleURL = nil
         captionsUserSelectedOtherSubtitle()
         perform(.selectSubtitleTrack(sender.tag))
     }

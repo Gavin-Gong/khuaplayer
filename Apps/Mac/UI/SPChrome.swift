@@ -2766,6 +2766,7 @@ final class SPChromeView: NSView, PlayerChromePresenting {
     var onVolumeBoostIntent: (() -> Void)?  // Intent to cross the locked boundary.
     var onMute: (() -> Void)?
     var onFullscreen: (() -> Void)?
+    var onPlaylist: (() -> Void)?
     var onRateSelected: ((Double) -> Void)?
     var onMotionSmoothingToggle: (() -> Void)?
     var onXDRToggle: (() -> Void)?
@@ -2782,6 +2783,7 @@ final class SPChromeView: NSView, PlayerChromePresenting {
         symbol: "goforward.5", accessibilityLabel: L("menu.play.forward5"),
         pointSize: SPM.symAux, size: SPM.btnAux)
     private let muteBtn = SPIconButton(symbol: "speaker.wave.2.fill", pointSize: SPM.symAux, size: SPM.btnAux)
+    private let playlistBtn = SPIconButton(symbol: "list.bullet", pointSize: SPM.symAux, size: SPM.btnAux)
     private let fsBtn = SPIconButton(symbol: "arrow.up.left.and.arrow.down.right", pointSize: SPM.symAux, size: SPM.btnAux)
     private let volSlider = SPVolumeControl(frame: .zero)
     private let rateChip = SPChipButton(width: 48)
@@ -2896,7 +2898,9 @@ final class SPChromeView: NSView, PlayerChromePresenting {
         backBtn.target = self; backBtn.action = #selector(backTapped)
         fwdBtn.target = self; fwdBtn.action = #selector(fwdTapped)
         muteBtn.target = self; muteBtn.action = #selector(muteTapped)
+        playlistBtn.target = self; playlistBtn.action = #selector(playlistTapped)
         fsBtn.target = self; fsBtn.action = #selector(fsTapped)
+        playlistBtn.setAccessibilityLabel(L("menu.playlist"))
 
         volSlider.target = self
         volSlider.action = #selector(volChanged)
@@ -2967,7 +2971,7 @@ final class SPChromeView: NSView, PlayerChromePresenting {
         // Omitted feature chips never enter the view or layout hierarchy.
         var installedViews: [NSView] = [track, playBtn, backBtn, fwdBtn]
         if SPFeatures.enhancements { installedViews += [motionChip] }
-        installedViews += [xdrChip, hdrLabel, rateChip, muteBtn, volSlider, fsBtn,
+        installedViews += [xdrChip, hdrLabel, rateChip, muteBtn, volSlider, playlistBtn, fsBtn,
                            curLabel, remLabel, bubble, previewCard]
         for v in installedViews { addSubview(v) }
 
@@ -3004,6 +3008,7 @@ final class SPChromeView: NSView, PlayerChromePresenting {
         backBtn.onHoverChanged = handler
         fwdBtn.onHoverChanged = handler
         muteBtn.onHoverChanged = handler
+        playlistBtn.onHoverChanged = handler
         fsBtn.onHoverChanged = handler
     }
 
@@ -3291,7 +3296,7 @@ final class SPChromeView: NSView, PlayerChromePresenting {
     // switching media, toggling an enhancement or updating FPS cannot hide it.
     private func regularControlsWidth() -> CGFloat {
         let playbackWidth = SPM.btnMain + 2 * SPM.btnAux + 2 * SPM.gapIn
-        let transportWidth = 2 * SPM.btnAux + 2 * SPM.gapBtw
+        let transportWidth = 3 * SPM.btnAux + 2 * SPM.gapBtw + SPM.gapIn
             + volSlider.regularVisualWidth + SPM.gapIn + regularRateWidth
         var featureWidth = SPM.gapIn + regularXDRWidth + SPM.gapBtw + hdrLabelSize.width
         if SPFeatures.enhancements {
@@ -3316,7 +3321,10 @@ final class SPChromeView: NSView, PlayerChromePresenting {
         hdrLabel.isHidden = compactControls || latestHDRDescription == nil
         var rx = colX + colW
         fsBtn.frame = NSRect(x: rx - SPM.btnAux, y: byC - SPM.btnAux / 2, width: SPM.btnAux, height: SPM.btnAux)
-        rx = fsBtn.frame.minX - SPM.gapBtw
+        rx = fsBtn.frame.minX - SPM.gapIn
+        playlistBtn.frame = NSRect(x: rx - SPM.btnAux, y: byC - SPM.btnAux / 2,
+                                    width: SPM.btnAux, height: SPM.btnAux)
+        rx = playlistBtn.frame.minX - SPM.gapBtw
         let volumeX = rx - volSlider.preferredVisualWidth
         let volumeFrame = NSRect(x: volumeX,
                                  y: byC - volSlider.trackCenterOffset,
@@ -3848,6 +3856,7 @@ final class SPChromeView: NSView, PlayerChromePresenting {
         onSeekRelative?(+5)
     }
     @objc private func muteTapped() { onMute?() }
+    @objc private func playlistTapped() { onPlaylist?() }
     @objc private func fsTapped() { onFullscreen?() }
     @objc private func motionSmoothingTapped() { onMotionSmoothingToggle?() }
     @objc private func xdrTapped() { onXDRToggle?() }

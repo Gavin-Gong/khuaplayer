@@ -312,6 +312,36 @@ static const char *kAssHeader =
     "Style: Default,Arial,55,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,0,2,25,25,22,1\n\n"
     "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n";
 
+// A dual sidecar is deliberately normalized into one small ASS script. This
+// keeps both sources on the same media clock and avoids a second Metal overlay
+// pass. The two styles are the only layout authority: primary is bottom,
+// secondary is top. Source ASS alignment overrides are removed so a sidecar
+// cannot unexpectedly move the other language over the picture.
+static const char *kDualAssHeader =
+    "[Script Info]\nScriptType: v4.00+\nPlayResX: 1280\nPlayResY: 720\n\n"
+    "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+    "Style: Primary,Arial,55,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,0,2,25,25,22,1\n"
+    "Style: Secondary,Arial,55,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,0,8,25,25,22,1\n\n"
+    "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n";
+
+static BOOL spSubtitleLooksLikeASS(NSString *text) {
+    NSString *head = text.length > 4096 ? [text substringToIndex:4096] : text;
+    return [head containsString:@"[Script Info]"] ||
+           [head containsString:@"[V4+ Styles]"] ||
+           [head containsString:@"[V4 Styles]"];
+}
+
+static NSString *spSubtitleRemoveAlignmentOverrides(NSString *text) {
+    NSMutableString *out = [text mutableCopy];
+    for (int i = 1; i <= 9; i++) {
+        [out replaceOccurrencesOfString:[NSString stringWithFormat:@"\\an%d", i]
+                             withString:@""
+                                options:NSLiteralSearch
+                                  range:NSMakeRange(0, out.length)];
+    }
+    return out;
+}
+
 #pragma mark - Subtitle worker
 
 - (BOOL)workerEnsureAssReady {
@@ -888,6 +918,96 @@ static NSString *sanitizeSubtitleLines(NSString *text, unsigned logId) {
 - (void)invalidatePendingLoads { _loadReq.fetch_add(1); }
 
 - (void)loadSubtitleText:(NSString *)text completion:(void (^)(BOOL))completion {
+    [self loadSubtitleText:text secondaryText:nil completion:completion];
+}
+
+- (NSString *)dualASSFromText:(NSString *)text style:(NSString *)style {
+    if (text.length == 0) return @"";
+
+    NSMutableString *events = [NSMutableString string];
+    if (spSubtitleLooksLikeASS(text)) {
+        for (NSString *rawLine in [text componentsSeparatedByString:@"\n"]) {
+            NSString *line = [rawLine stringByTrimmingCharactersInSet:
+                                      [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            if (![line hasPrefix:@"Dialogue:"]) continue;
+
+            NSString *payload = [line substringFromIndex:[@"Dialogue:" length]];
+            NSArray<NSString *> *fields = [payload componentsSeparatedByString:@","];
+            if (fields.count < 10) continue;
+            NSString *start = [fields[1] stringByTrimmingCharactersInSet:
+                                     [NSCharacterSet whitespaceCharacterSet]];
+            NSString *end = [fields[2] stringByTrimmingCharactersInSet:
+                                   [NSCharacterSet whitespaceCharacterSet]];
+            NSMutableString *body = [NSMutableString string];
+            for (NSUInteger i = 9; i < fields.count; i++) {
+                if (i > 9) [body appendString:@","];
+                [body appendString:fields[i]];
+            }
+            NSString *clean = spSubtitleRemoveAlignmentOverrides(body);
+            if (clean.length == 0) continue;
+            [events appendFormat:@"Dialogue: 0,%@,%@,%@,,0,0,0,,%@\n",
+                                  start, end, style, clean];
+        }
+        return events;
+    }
+
+    NSArray<NSString *> *lines = [text componentsSeparatedByString:@"\n"];
+    NSUInteger idx = 0;
+    NSCharacterSet *ws = [NSCharacterSet whitespaceCharacterSet];
+    NSCharacterSet *wsNL = [NSCharacterSet whitespaceAndNewlineCharacterSet];
+    while (idx < lines.count) {
+        while (idx < lines.count &&
+               [lines[idx] stringByTrimmingCharactersInSet:ws].length == 0) {
+            idx++;
+        }
+        if (idx >= lines.count) break;
+
+        NSString *timeline;
+        if ([lines[idx] containsString:@"-->"]) {
+            timeline = lines[idx++];
+        } else {
+            idx++;
+            if (idx >= lines.count) break;
+            timeline = lines[idx++];
+            if (![timeline containsString:@"-->"]) continue;
+        }
+
+        NSArray<NSString *> *parts = [timeline componentsSeparatedByString:@"-->"];
+        if (parts.count < 2) continue;
+        NSString *startS = [parts[0] stringByTrimmingCharactersInSet:wsNL];
+        NSString *endS = [parts[1] stringByTrimmingCharactersInSet:wsNL];
+        NSRange annotation = [endS rangeOfCharacterFromSet:ws];
+        if (annotation.location != NSNotFound) endS = [endS substringToIndex:annotation.location];
+        double start = srtTimeToSeconds(startS);
+        double end = srtTimeToSeconds(endS);
+        if (end <= start) continue;
+
+        NSMutableString *body = [NSMutableString string];
+        while (idx < lines.count &&
+               [lines[idx] stringByTrimmingCharactersInSet:ws].length > 0) {
+            NSString *raw = lines[idx++];
+            if (body.length > 0) [body appendString:@"\\N"];
+            [body appendString:SPSubtitleInlineTagsToASS(raw)];
+        }
+        if (body.length == 0) continue;
+        [events appendFormat:@"Dialogue: 0,%@,%@,%@,,0,0,0,,%@\n",
+                              [self assTimeFromSeconds:start],
+                              [self assTimeFromSeconds:end], style, body];
+    }
+    return events;
+}
+
+- (NSString *)dualASSFromPrimaryText:(NSString *)primaryText
+                       secondaryText:(NSString *)secondaryText {
+    NSMutableString *script = [NSMutableString stringWithUTF8String:kDualAssHeader];
+    [script appendString:[self dualASSFromText:primaryText style:@"Primary"]];
+    [script appendString:[self dualASSFromText:secondaryText style:@"Secondary"]];
+    return script;
+}
+
+- (void)loadSubtitleText:(NSString *)primaryText
+           secondaryText:(NSString *)secondaryText
+              completion:(void (^)(BOOL))completion {
     uint64_t gen = _gen.load();
     const uint64_t req = _loadReq.fetch_add(1) + 1;
     void (^finish)(BOOL) = ^(BOOL ok) {
@@ -898,15 +1018,26 @@ static NSString *sanitizeSubtitleLines(NSString *text, unsigned logId) {
         if (self->_loadReq.load() != req) { finish(NO); return; }
         if (![self workerEnsureAssReady]) { finish(NO); return; }
 
-        NSString *body = text;
+        NSString *body = primaryText ?: @"";
+        NSString *secondaryBody = secondaryText ?: @"";
         if ([body rangeOfString:@"\r"].location != NSNotFound) {
             body = [body stringByReplacingOccurrencesOfString:@"\r\n" withString:@"\n"];
             body = [body stringByReplacingOccurrencesOfString:@"\r" withString:@"\n"];
         }
+        if ([secondaryBody rangeOfString:@"\r"].location != NSNotFound) {
+            secondaryBody = [secondaryBody stringByReplacingOccurrencesOfString:@"\r\n" withString:@"\n"];
+            secondaryBody = [secondaryBody stringByReplacingOccurrencesOfString:@"\r" withString:@"\n"];
+        }
 
-        NSString *head = body.length > 4096 ? [body substringToIndex:4096] : body;
-        BOOL isASS = [head containsString:@"[Script Info]"] || [head containsString:@"[V4+ Styles]"];
-        NSString *script = isASS ? sanitizeSubtitleLines(body, self->_spLogId) : [self assFromSrtText:body];
+        const BOOL dual = secondaryBody.length > 0;
+        NSString *script;
+        if (dual) {
+            script = [self dualASSFromPrimaryText:body secondaryText:secondaryBody];
+        } else {
+            NSString *head = body.length > 4096 ? [body substringToIndex:4096] : body;
+            BOOL isASS = [head containsString:@"[Script Info]"] || [head containsString:@"[V4+ Styles]"];
+            script = isASS ? sanitizeSubtitleLines(body, self->_spLogId) : [self assFromSrtText:body];
+        }
         AssApi &A = assApi();
         ASS_Track *tmp = A.new_track(self->_lib);
         if (!tmp) { finish(NO); return; }

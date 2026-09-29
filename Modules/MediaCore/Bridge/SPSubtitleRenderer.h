@@ -13,6 +13,13 @@
 
 - (void)loadSubtitleText:(NSString *)text completion:(void (^)(BOOL ok))completion;
 
+// Load a primary/secondary pair into one libass track. The primary script is
+// rendered with a bottom style and the secondary script with a top style.
+// Passing nil for either side keeps the other side usable.
+- (void)loadSubtitleText:(NSString *)primaryText
+           secondaryText:(nullable NSString *)secondaryText
+              completion:(void (^)(BOOL ok))completion;
+
 - (void)invalidatePendingLoads;
 
 - (id<MTLTexture>)textureForTime:(int64_t)us viewportWidth:(int)vw viewportHeight:(int)vh;

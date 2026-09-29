@@ -173,7 +173,7 @@ enum MainMenuBuilder {
         mainMenu.addItem(subItem)
         let subMenu = NSMenu(title: L("menu.subtitles"))
         subItem.submenu = subMenu
-        subMenu.addItem(withTitle: L("menu.loadSubtitle"),
+        subMenu.addItem(withTitle: L("menu.subtitleSettings"),
                         action: #selector(PlayerViewController.loadSubtitleAction(_:)),
                         keyEquivalent: "l")
         subMenu.addItem(.separator())

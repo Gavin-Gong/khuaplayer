@@ -87,7 +87,13 @@ NS_SWIFT_UI_ACTOR
 // interrupt callback, so a superseded/expired probe stops doing remote I/O
 // instead of merely discarding its eventual result.
 + (CGSize)probeDisplaySizeForURL:(NSURL *)url
-              cancellationToken:(nullable SPProbeCancellationToken *)token;
+               cancellationToken:(nullable SPProbeCancellationToken *)token;
+
+// Probe a media duration without creating a playback session. Returns zero
+// when the container does not publish a usable duration or the probe is
+// cancelled.
++ (double)probeDurationForURL:(NSURL *)url
+             cancellationToken:(nullable SPProbeCancellationToken *)token;
 @property (nonatomic, weak) id<SPPlayerCoreDelegate> delegate;
 @property (nonatomic, readonly) SPPlayerState state;
 @property (nonatomic, readonly) SPVideoInfo videoInfo;
@@ -192,8 +198,16 @@ NS_SWIFT_UI_ACTOR
 // Silent failure skips delegate error presentation. Completion runs on the
 // main thread; rejected or obsolete generations report failure.
 - (BOOL)loadSubtitleFile:(NSString *)path
-                  silent:(BOOL)silent
-              completion:(void (^_Nullable)(BOOL ok))completion;
+                   silent:(BOOL)silent
+               completion:(void (^_Nullable)(BOOL ok))completion;
+
+// Load one or two external text subtitle files as a synchronized pair. The
+// primary file is rendered below the picture and the secondary file above it.
+// Either path may be nil, but at least one must be supplied.
+- (BOOL)loadSubtitleFilesAtPath:(nullable NSString *)primaryPath
+                  secondaryPath:(nullable NSString *)secondaryPath
+                          silent:(BOOL)silent
+                      completion:(void (^_Nullable)(BOOL ok))completion;
 // Explicitly choosing the current/generated subtitle still supersedes a
 // pending external load. Invalidate it without clearing the displayed track.
 - (void)cancelPendingSubtitleLoad;
